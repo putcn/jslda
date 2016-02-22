@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <!-- The above 3 meta tags *must* come first in the head; any other head content must come *after* these tags -->
+    <title>Bootstrap 101 Template</title>
+
+    <!-- Bootstrap -->
+    <link href="node_modules/bootstrap/dist/css/bootstrap.min.css" rel="stylesheet">
+
+    <!-- HTML5 shim and Respond.js for IE8 support of HTML5 elements and media queries -->
+    <!-- WARNING: Respond.js doesn't work if you view the page via file:// -->
+    <!--[if lt IE 9]>
+      <script src="https://oss.maxcdn.com/html5shiv/3.7.2/html5shiv.min.js"></script>
+      <script src="https://oss.maxcdn.com/respond/1.4.2/respond.min.js"></script>
+    <![endif]-->
+  </head>
+  <body>
+    
+    <div class="container">
+        <div class="row">
+            
+            <div class="col-lg-12">
+                <div class="input-group">
+                <input id="keyWord" type="text" class="form-control" placeholder="Search for...">
+                <span class="input-group-btn">
+                    <button class="btn btn-default" type="button" id="searchBtn">Go!</button>
+                </span>
+                </div><!-- /input-group -->
+            </div><!-- /.col-lg-6 -->
+        </div><!-- /.row -->
+        
+        <div class="row" id="result">
+            
+            
+        </div>
+    </div>
+   
+
+    <!-- jQuery (necessary for Bootstrap's JavaScript plugins) -->
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.3/jquery.min.js"></script>
+    <!-- Include all compiled plugins (below), or include individual files as needed -->
+    <script src="node_modules/bootstrap/dist/js/bootstrap.min.js"></script>
+    <script type="text/javascript">
+        var filePaths = ["affix.js", "alert.js", "button.js", "carousel.js", "collapse.js", "dropdown.js", "modal.js", "popover.js", "scrollspy.js", "tab.js", "tooltip.js", "transition.js"];
+        //load files
+        var basePath = "node_modules/bootstrap/js/";
+        var requests = [];
+        function tf(docArr, queryWord){
+            var count = 0;
+            $.each(docArr, function(index, docWord){
+                if(docWord == queryWord){
+                    count = count +1;
+                }
+            })
+            return count;
+        }
+        
+        $.each(filePaths, function(index, path){
+            requests.push($.ajax(basePath + path ,{
+                dataType : "text"
+            }))
+        })
+        $.when.apply(window, requests).then(function(){
+            //files are ready, process documents
+            console.log("all file loaded");
+            var documents = [];
+            $.each(arguments, function(index, ajaxRaw){
+                var doc = ajaxRaw[0];
+                doc = doc.replace(/[^\w\s]/gi, ' ');
+                doc = doc.replace(/\s\s+/g, ' ');
+                doc = doc.toLowerCase();
+                documents.push(doc);
+            })
+            console.log("done file preprocessing");
+            return documents;
+        }).then(function(documents){
+            //generate dic
+            console.log("start generating words");
+            var wordCount = 0;
+            var invertedIndex = {};
+            var docArrs = [];
+            $.each(documents, function(docIndex, doc){
+                var wordArr = doc.split(" ");
+                docArrs.push(wordArr);
+                $.each(wordArr, function(wordIndex, word){
+                    if(!invertedIndex[word]){
+                        invertedIndex[word] = {};
+                        wordCount = wordCount +1;
+                    }
+                })
+            })
+            console.log("found " + wordCount + " words");
+            return {
+                dic : invertedIndex,
+                documents : documents,
+                docWordArrs : docArrs
+            };
+        }).then(function(obj){
+            console.info("start creating inverted index and document vector");
+            var documentAbstracts = [];
+            var docToLengthMapping = {};
+            $.each(obj.docWordArrs, function(docIndex, wordArr){
+                var word;
+                docToLengthMapping[docIndex] = wordArr.length;
+                var documentAbstract = {};
+                for(word in obj.dic){
+                    (function(word, wordArr){
+                        var count = tf(wordArr, word);
+                        documentAbstract[word] = {
+                            count : count,
+                            p : count/wordArr.length
+                        };
+                        if(count > 0){
+                            obj.dic[word][docIndex] = count/wordArr.length
+                        }
+                    })(word, wordArr);
+                }
+                documentAbstracts.push(documentAbstract);
+            })
+            console.info("done creating inverted index and document vector");
+            return {
+                documentVectors : documentAbstracts,
+                dic : obj.dic,
+                docToLengthMapping : docToLengthMapping
+            }
+        }).then(function(obj){
+            //create lda
+            //TBD
+            window.searchRepo = obj;
+        })
+        
+        
+        function doSearch(keyworsArr){
+            var invertedIndex = window.searchRepo.dic;
+            var candidats = {};
+            console.info("search started");
+            console.time();
+            $.each(keyworsArr, function(index, word){
+                if(!invertedIndex[word]){
+                    return;
+                }
+                $.each(invertedIndex[word], function(docId,p){
+                    if(!candidats[docId]){
+                        candidats[docId] = p;
+                    }else{
+                       candidats[docId] += p; 
+                    }
+                })
+            })
+            var candidatesArr = [], i;
+            for(i in candidats){
+                candidatesArr.push({
+                    id : i,
+                    p : candidats[i]
+                })
+            }
+            candidatesArr.sort(function(a, b){
+                return b.p - a.p;
+            });
+            
+            $("#result").html(JSON.stringify(candidatesArr));
+            
+            console.timeEnd();
+        }
+        
+        $("#searchBtn").click(function(){
+            var keyword = $("#keyWord").val();
+            keyword = keyword.replace(/[^\w\s]/gi, '');
+            keyword = keyword.replace(/\s\s+/g, ' ');
+            keyword = keyword.toLowerCase();
+            keyWords = keyword.split(" ");
+            doSearch(keyWords);
+            
+        })
+    </script>
+  </body>
+</html>
