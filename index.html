@@ -33,9 +33,26 @@
         </div><!-- /.row -->
         
         <div class="row" id="result">
-            
-            
         </div>
+        
+        
+        <ul class="nav nav-tabs" role="tablist">
+            
+            <li role="presentation" class="active"><a href="#docvector" aria-controls="docvector" role="tab" data-toggle="tab">Doc Vector</a></li>
+            <li role="presentation"><a href="#topics" aria-controls="topics" role="tab" data-toggle="tab">Topics</a></li>
+        </ul>
+        
+        <div class="tab-content">
+            <pre role="tabpanel" class="tab-pane active" id="docvector">
+                <code class="row" id="testData"></code>
+            </pre>
+            <pre role="tabpanel" class="tab-pane active" id="topics">
+                <code class="row" id="rawTopicModel"></code>
+            </pre>
+        </div>
+        
+        
+        
     </div>
    
 
@@ -63,6 +80,8 @@
                 dataType : "text"
             }))
         })
+        
+        
         $.when.apply(window, requests).then(function(){
             //files are ready, process documents
             console.log("all file loaded");
@@ -116,10 +135,13 @@
                         if(count > 0){
                             obj.dic[word][docIndex] = count/wordArr.length
                         }
+                        
+                        
                     })(word, wordArr);
                 }
                 documentAbstracts.push(documentAbstract);
             })
+            $("#testData").html(JSON.stringify(documentAbstracts, null, 4));
             console.info("done creating inverted index and document vector");
             return {
                 documentVectors : documentAbstracts,
@@ -127,21 +149,78 @@
                 docToLengthMapping : docToLengthMapping
             }
         }).then(function(obj){
-            //create lda
-            //TBD
+            
             window.searchRepo = obj;
+            
+            
+        }).then(function(){
+            return $.get("toy.model.txt");
+        }).then(function(data){
+            console.log("start creating topic and word mutual index ");
+            
+            //$("#rawTopicModel").html(data.replace(/\n/g, "<br />"));
+            var dataRows = data.split("\n");
+            var topics = {};
+            var isFirstRow = true;
+            var wordToTopicMapping = {};
+            $.each(dataRows, function(rowIndex,dataRow){
+                var tempArr = dataRow.split("	");
+                if(tempArr.length < 2){
+                    return;
+                }
+                var word = tempArr[0];
+                var topicDataArr = tempArr[1].split(" ");
+                $.each(topicDataArr, function(topicIndex, strP){
+                    var floatP = parseFloat(strP);
+                    var topic;
+                    if(isFirstRow){
+                        topic = {};
+                        topics[topicIndex] = topic;
+                    }
+                    topic = topics[topicIndex];
+                    if( floatP>0 ){
+                        if( ! wordToTopicMapping[word]){
+                            wordToTopicMapping[word] = [];
+                        }
+                        wordToTopicMapping[word].push(topic);
+                        topic[word] = floatP;
+                    }
+                })
+                isFirstRow = false;
+            })
+            window.searchRepo.wordToTopicMapping = wordToTopicMapping;
+            window.searchRepo.topics = topics;
+            
+            console.log("done creating topic and word mutual index ");
+            
+            //display topics
+            $("#rawTopicModel").html(JSON.stringify(topics, null, 4));
         })
         
         
         function doSearch(keyworsArr){
             var invertedIndex = window.searchRepo.dic;
+            var wordToTopicMapping = window.searchRepo.wordToTopicMapping;
             var candidats = {};
+            var keywordsExpanded = [];
             console.info("search started");
             console.time();
             $.each(keyworsArr, function(index, word){
                 if(!invertedIndex[word]){
                     return;
                 }
+                
+                //find topics
+                var topics = wordToTopicMapping[word];
+                $.each(topics, function(topicIndex, topic){
+                    $.each(topic, function(topicWord, topicWordP){
+                        keywordsExpanded.push({
+                            word : topicWord,
+                            p : topicWordP
+                        })
+                    })
+                })
+                
                 $.each(invertedIndex[word], function(docId,p){
                     if(!candidats[docId]){
                         candidats[docId] = p;
@@ -150,6 +229,8 @@
                     }
                 })
             })
+            
+            /*
             var candidatesArr = [], i;
             for(i in candidats){
                 candidatesArr.push({
@@ -162,6 +243,7 @@
             });
             
             $("#result").html(JSON.stringify(candidatesArr));
+            */
             
             console.timeEnd();
         }
